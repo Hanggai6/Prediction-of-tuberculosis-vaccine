@@ -29,7 +29,7 @@ from multimodal_model_architecture import MultiModalEpitopePredictor, EpitopeDat
 class VaccineDesignPipeline:
     """疫苗设计管道"""
 
-    def __init__(self, model_path="best_multimodal_epitope_model.pth"):  # 修改默认路径为当前目录
+    def __init__(self, model_path="best_multimodal_epitope_model.pth"):  # 直接当前目录
         self.model_path = Path(model_path)
         self.model = None
         self.data_loader = None
@@ -51,12 +51,12 @@ class VaccineDesignPipeline:
             'immunogenic': 'KK'
         }
 
-        print("🧬 疫苗设计管道初始化")
+        print("🧬 疫苗设计管道初始化", file=sys.stderr)
 
     def load_trained_model(self):
         """加载训练好的模型"""
         try:
-            print("📥 加载训练好的模型...")
+            print("📥 加载训练好的模型...", file=sys.stderr)
 
             if not self.model_path.exists():
                 raise FileNotFoundError(f"模型文件不存在: {self.model_path}")
@@ -76,9 +76,7 @@ class VaccineDesignPipeline:
             self.model.to(device)
             self.model.eval()
 
-            print(f"✅ 模型加载成功!")
-            print(f"   📊 最佳Epoch: {checkpoint.get('epoch', -1) + 1}")
-            print(f"   🎯 验证准确率: {checkpoint.get('val_accuracy_main', 0):.4f}")
+            print(f"✅ 模型加载成功!", file=sys.stderr)
 
             self.data_loader = EpitopeDataLoader()
             data = self.data_loader.load_and_preprocess_data()
@@ -89,7 +87,7 @@ class VaccineDesignPipeline:
             return True
 
         except Exception as e:
-            print(f"❌ 模型加载失败: {e}")
+            print(f"❌ 模型加载失败: {e}", file=sys.stderr)
             return False
 
     def generate_candidate_epitopes(self, protein_sequence, epitope_lengths=[9, 11, 13, 15, 20, 25], step=2):
@@ -110,7 +108,7 @@ class VaccineDesignPipeline:
                             'source_protein': 'input_protein'
                         })
 
-        print(f"🧬 生成候选表位 (步长={step}): {len(candidates)}个")
+        print(f"🧬 生成候选表位 (步长={step}): {len(candidates)}个", file=sys.stderr)
         return candidates
 
     def _is_valid_epitope(self, sequence):
@@ -130,7 +128,7 @@ class VaccineDesignPipeline:
         if self.model is None:
             raise ValueError("请先加载训练好的模型")
 
-        print(f"🔬 预测{len(epitope_candidates)}个候选表位的免疫原性...")
+        print(f"🔬 预测{len(epitope_candidates)}个候选表位的免疫原性...", file=sys.stderr)
 
         predictions = []
         device = next(self.model.parameters()).device
@@ -170,25 +168,19 @@ class VaccineDesignPipeline:
 
         predictions.sort(key=lambda x: x['immunogenicity_score'], reverse=True)
 
-        print(f"✅ 预测完成!")
-        print(f"   🎯 高免疫原性表位 (>0.7): {len([p for p in predictions if p['immunogenicity_score'] > 0.7])}")
-        print(f"   🎯 T细胞表位: {len([p for p in predictions if p['predicted_type'] == 'T-cell'])}")
-        print(f"   🎯 B细胞表位: {len([p for p in predictions if p['predicted_type'] == 'B-cell'])}")
-
+        print(f"✅ 预测完成!", file=sys.stderr)
         return predictions
 
     def filter_top_candidates(self, predictions, top_n=None):
-        """只保留免疫原性最高的前 top_n 个候选"""
         if top_n is None:
             top_n = self.top_n_candidates
         if len(predictions) <= top_n:
             return predictions
         filtered = predictions[:top_n]
-        print(f"📊 保留免疫原性前 {top_n} 个候选 (共 {len(predictions)} 个)")
+        print(f"📊 保留免疫原性前 {top_n} 个候选", file=sys.stderr)
         return filtered
 
     def _calculate_sequence_features(self, sequence):
-        """计算表位序列特征（同原代码）"""
         aa_properties = {
             'A': {'hydrophobic': 1.8, 'volume': 88.6, 'charge': 0},
             'R': {'hydrophobic': -4.5, 'volume': 173.4, 'charge': 1},
@@ -228,9 +220,7 @@ class VaccineDesignPipeline:
         return [length, hydrophobicity, net_charge]
 
     def remove_similar_epitopes(self, predictions, similarity_threshold=0.8):
-        """去除相似的表位（同原代码）"""
-        print(f"🔄 去除相似度>{similarity_threshold}的表位...")
-
+        print(f"🔄 去除相似度>{similarity_threshold}的表位...", file=sys.stderr)
         unique_epitopes = []
         removed_count = 0
 
@@ -247,11 +237,10 @@ class VaccineDesignPipeline:
             if not is_similar:
                 unique_epitopes.append(pred)
 
-        print(f"✅ 去重完成: 保留{len(unique_epitopes)}个, 移除{removed_count}个相似表位")
+        print(f"✅ 去重完成: 保留{len(unique_epitopes)}个", file=sys.stderr)
         return unique_epitopes
 
     def _calculate_sequence_similarity(self, seq1, seq2):
-        """计算序列相似度（同原代码）"""
         if len(seq1) != len(seq2):
             lcs_length = self._longest_common_subsequence(seq1, seq2)
             return lcs_length / max(len(seq1), len(seq2))
@@ -260,7 +249,6 @@ class VaccineDesignPipeline:
             return matches / len(seq1)
 
     def _longest_common_subsequence(self, seq1, seq2):
-        """最长公共子序列（同原代码）"""
         m, n = len(seq1), len(seq2)
         dp = [[0] * (n + 1) for _ in range(m + 1)]
         for i in range(1, m + 1):
@@ -272,8 +260,7 @@ class VaccineDesignPipeline:
         return dp[m][n]
 
     def select_optimal_epitopes(self, predictions, max_epitopes=10, balance_bcell_tcell=True):
-        """选择最优表位组合（同原代码）"""
-        print(f"🎯 选择最优表位组合 (最多{max_epitopes}个)...")
+        print(f"🎯 选择最优表位组合 (最多{max_epitopes}个)...", file=sys.stderr)
 
         high_quality = [
             p for p in predictions
@@ -281,7 +268,7 @@ class VaccineDesignPipeline:
         ]
 
         if len(high_quality) == 0:
-            print("⚠️  没有找到高质量表位，降低阈值...")
+            print("⚠️  没有找到高质量表位，降低阈值...", file=sys.stderr)
             high_quality = predictions[:max_epitopes * 2]
 
         if balance_bcell_tcell:
@@ -293,7 +280,6 @@ class VaccineDesignPipeline:
 
             if len(bcell_epitopes) < target_bcell:
                 needed = target_bcell - len(bcell_epitopes)
-                print(f"⚠️  B细胞表位不足，将从长肽段中强制选择 {needed} 个作为B细胞")
                 sorted_by_length = sorted(
                     [p for p in high_quality if p not in tcell_epitopes and p not in bcell_epitopes],
                     key=lambda x: len(x['sequence']), reverse=True
@@ -314,17 +300,12 @@ class VaccineDesignPipeline:
 
         selected.sort(key=lambda x: x['immunogenicity_score'], reverse=True)
 
-        print(f"✅ 选择完成:")
-        print(f"   🎯 总选择: {len(selected)}个表位")
-        print(f"   🎯 B细胞表位: {len([p for p in selected if p['predicted_type'] == 'B-cell'])}个")
-        print(f"   🎯 T细胞表位: {len([p for p in selected if p['predicted_type'] == 'T-cell'])}个")
-        print(f"   🎯 平均免疫原性: {np.mean([p['immunogenicity_score'] for p in selected]):.3f}")
-
+        print(f"✅ 选择完成: {len(selected)}个表位", file=sys.stderr)
         return selected
 
     def design_multitope_vaccine(self, selected_epitopes, linker_type='flexible'):
-        """设计多表位疫苗（同原代码，但返回疫苗序列和表位详情）"""
-        print(f"🧬 设计多表位疫苗...")
+        """设计多表位疫苗（返回疫苗序列和表位详情）"""
+        print(f"🧬 设计多表位疫苗...", file=sys.stderr)
 
         if not selected_epitopes:
             raise ValueError("没有选择的表位用于疫苗设计")
@@ -352,43 +333,12 @@ class VaccineDesignPipeline:
             'epitope_details': selected_epitopes
         }
 
-        print(f"✅ 疫苗设计完成:")
-        print(f"   🧬 疫苗长度: {vaccine_design['total_length']}个氨基酸")
-        print(f"   🎯 包含表位: {vaccine_design['num_epitopes']}个")
-        print(f"   ⚖️  分子量: {vaccine_design['molecular_weight']:.1f} Da")
-        print(f"   📊 等电点: {vaccine_design['isoelectric_point']:.2f}")
-        print(f"   🎯 平均免疫原性: {vaccine_design['average_immunogenicity']:.3f}")
-
+        print(f"✅ 疫苗设计完成!", file=sys.stderr)
         return vaccine_design
 
-    def save_results(self, vaccine_design, output_dir="results"):
-        """保存结果到CSV文件（修改为直接输出表位CSV）"""
-        # 创建输出目录（如果不存在）
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # 保存表位详情为CSV
-        epitope_df = pd.DataFrame(vaccine_design['epitope_details'])
-        csv_file = output_dir / "selected_epitopes.csv"
-        epitope_df.to_csv(csv_file, index=False, encoding='utf-8')
-        print(f"💾 表位详情已保存至: {csv_file}")
-
-        # 同时保存疫苗序列为FASTA（可选）
-        fasta_file = output_dir / "vaccine_sequence.fasta"
-        with open(fasta_file, 'w') as f:
-            f.write(">Tuberculosis_Multitope_Vaccine\n")
-            f.write(vaccine_design['vaccine_sequence'] + "\n")
-        print(f"🧬 疫苗序列已保存至: {fasta_file}")
-
-        return csv_file
-
     def run_vaccine_design_pipeline(self, protein_sequence, max_epitopes=10, output_csv=None):
-        """
-        运行完整的疫苗设计流程
-        如果提供了 output_csv 路径，则直接将表位详情保存到该文件
-        """
-        print("🚀 启动结核病疫苗设计流程")
-        print("=" * 60)
+        print("🚀 启动结核病疫苗设计流程", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
 
         if not self.load_trained_model():
             return None
@@ -400,15 +350,11 @@ class VaccineDesignPipeline:
         selected = self.select_optimal_epitopes(unique, max_epitopes)
         vaccine_design = self.design_multitope_vaccine(selected)
 
-        # 保存结果：如果指定了 output_csv，直接保存到该文件
         if output_csv:
             # 将表位详情保存为CSV
             epitope_df = pd.DataFrame(vaccine_design['epitope_details'])
             epitope_df.to_csv(output_csv, index=False, encoding='utf-8')
-            print(f"💾 结果已保存至: {output_csv}")
-        else:
-            # 否则保存到默认目录
-            self.save_results(vaccine_design)
+            print(f"💾 结果已保存至: {output_csv}", file=sys.stderr)
 
         return vaccine_design
 
@@ -416,11 +362,10 @@ class VaccineDesignPipeline:
 def main():
     parser = argparse.ArgumentParser(description='结核杆菌表位预测和疫苗设计')
     parser.add_argument('--input', type=str, required=True, help='输入的FASTA文件路径')
-    parser.add_argument('--output', type=str, required=True, help='输出CSV文件路径（保存预测的表位详情）')
-    parser.add_argument('--max_epitopes', type=int, default=10, help='最终选择的表位数量（默认10）')
+    parser.add_argument('--output', type=str, required=True, help='输出CSV文件路径')
+    parser.add_argument('--max_epitopes', type=int, default=10, help='最终选择的表位数量')
     args = parser.parse_args()
 
-    # 读取FASTA文件中的第一条序列
     input_path = Path(args.input)
     if not input_path.exists():
         print(f"错误：输入文件 {input_path} 不存在", file=sys.stderr)
@@ -433,13 +378,12 @@ def main():
             print("错误：FASTA文件中没有序列", file=sys.stderr)
             sys.exit(1)
         protein_sequence = str(records[0].seq)
-        print(f"从FASTA文件读取序列: {records[0].id}, 长度 {len(protein_sequence)}")
+        print(f"从FASTA文件读取序列: {records[0].id}, 长度 {len(protein_sequence)}", file=sys.stderr)
     except Exception as e:
         print(f"读取FASTA文件失败: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # 运行管道
-    pipeline = VaccineDesignPipeline()  # 模型路径已修改为当前目录
+    pipeline = VaccineDesignPipeline()
     result = pipeline.run_vaccine_design_pipeline(
         protein_sequence=protein_sequence,
         max_epitopes=args.max_epitopes,
@@ -450,7 +394,7 @@ def main():
         print("疫苗设计失败", file=sys.stderr)
         sys.exit(1)
 
-    print("\n🎉 处理完成！")
+    print("🎉 处理完成！", file=sys.stderr)
 
 
 if __name__ == "__main__":
