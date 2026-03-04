@@ -78,10 +78,8 @@ def is_valid_fasta(content):
     lines = content.strip().split('\n')
     if not lines:
         return False
-    # 第一行必须以 > 开头
     if not lines[0].startswith('>'):
         return False
-    # 至少有一行序列（非空且不是以>开头）
     has_sequence = False
     for line in lines[1:]:
         if line.strip() and not line.startswith('>'):
@@ -91,29 +89,24 @@ def is_valid_fasta(content):
 
 # 预测逻辑
 if submit_button:
-    # 检查是否有输入
     if not fasta_text.strip() and uploaded_file is None:
         st.warning("请先粘贴FASTA序列或上传文件。")
         st.stop()
 
-    # 准备输入文件
-    input_path = None
     unique_id = str(uuid.uuid4())
     temp_dir = "temp"
     os.makedirs(temp_dir, exist_ok=True)
 
+    input_path = None
     if uploaded_file is not None:
-        # 读取上传文件内容
         try:
             file_content = uploaded_file.read().decode('utf-8')
             if not file_content.strip():
                 st.error("上传的文件为空。请检查文件内容。")
                 st.stop()
-            # 验证FASTA格式
             if not is_valid_fasta(file_content):
                 st.error("文件内容不是有效的FASTA格式。第一行必须以 '>' 开头，且包含序列。")
                 st.stop()
-            # 保存文件
             input_path = os.path.join(temp_dir, f"input_{unique_id}.fasta")
             with open(input_path, "w", encoding='utf-8') as f:
                 f.write(file_content)
@@ -122,16 +115,13 @@ if submit_button:
             st.error(f"读取文件失败: {e}")
             st.stop()
     else:
-        # 处理文本输入
         text_content = fasta_text.strip()
         if not text_content:
             st.warning("请输入FASTA序列。")
             st.stop()
-        # 验证FASTA格式
         if not is_valid_fasta(text_content):
             st.error("输入的文本不是有效的FASTA格式。第一行必须以 '>' 开头，且包含序列。")
             st.stop()
-        # 如果用户只提供了序列没有头，自动添加一个头
         if not text_content.startswith('>'):
             text_content = ">user_provided_sequence\n" + text_content
         input_path = os.path.join(temp_dir, f"input_{unique_id}.fasta")
@@ -144,7 +134,6 @@ if submit_button:
 
     with st.spinner("🔬 AI模型正在预测中，请稍候..."):
         try:
-            # 调用后端脚本
             result = subprocess.run(
                 [sys.executable, '8vaccine_design_pipeline.py', '--input', input_path, '--output', output_path],
                 capture_output=True,
@@ -172,11 +161,14 @@ if submit_button:
                 st.subheader("📈 统计信息")
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("总表位数", len(df))
+                    st.metric("总表位数", len(df) - (1 if 'vaccine' in df['type'].values else 0))  # 减去疫苗行
                 with col2:
                     if 'immunogenicity_score' in df.columns:
-                        avg_score = df['immunogenicity_score'].mean()
-                        st.metric("平均免疫原性得分", f"{avg_score:.3f}")
+                        # 只计算表位的平均得分（排除疫苗行）
+                        epitope_scores = df[df['type'] != 'vaccine']['immunogenicity_score']
+                        if not epitope_scores.empty:
+                            avg_score = epitope_scores.mean()
+                            st.metric("平均免疫原性得分", f"{avg_score:.3f}")
                 with col3:
                     if 'predicted_type' in df.columns:
                         tcell_count = (df['predicted_type'] == 'T-cell').sum()
@@ -186,31 +178,17 @@ if submit_button:
                         bcell_count = (df['predicted_type'] == 'B-cell').sum()
                         st.metric("B细胞表位数", bcell_count)
 
-                # 展示前5个高免疫原性表位
+                # 展示前5个高免疫原性表位（排除疫苗行）
                 if 'immunogenicity_score' in df.columns:
                     st.subheader("🔝 高免疫原性表位 (前5)")
-                    top5 = df.nlargest(5, 'immunogenicity_score')[['sequence', 'immunogenicity_score', 'predicted_type']]
-                    st.table(top5)
+                    epitope_only = df[df['type'] != 'vaccine']
+                    if not epitope_only.empty:
+                        top5 = epitope_only.nlargest(5, 'immunogenicity_score')[['sequence', 'immunogenicity_score', 'predicted_type']]
+                        st.table(top5)
 
-                # 读取并展示疫苗设计摘要
-                if os.path.exists(summary_path):
-                    with open(summary_path, 'r', encoding='utf-8') as f:
-                        vaccine_summary = json.load(f)
-
-                    st.subheader("🧬 设计的疫苗序列")
-                    st.code(vaccine_summary['vaccine_sequence'], language='text')
-
-                    # 疫苗详细信息
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("疫苗长度 (aa)", vaccine_summary['total_length'])
-                        st.metric("连接子类型", vaccine_summary['linker_type'])
-                    with col2:
-                        st.metric("分子量 (Da)", f"{vaccine_summary['molecular_weight']:.1f}")
-                        st.metric("等电点", f"{vaccine_summary['isoelectric_point']:.2f}")
-                    with col3:
-                        st.metric("平均免疫原性", f"{vaccine_summary['average_immunogenicity']:.3f}")
-                        st.metric("表位总数", vaccine_summary['num_epitopes'])
+                # 可选：显示一条简短提示，说明疫苗序列已包含在下载文件中
+                if 'vaccine' in df['type'].values:
+                    st.info("设计的疫苗序列已作为第一行包含在下载的CSV文件中。")
 
             else:
                 st.error("预测完成，但未生成结果文件。请检查后台脚本。")
