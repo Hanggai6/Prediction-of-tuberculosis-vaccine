@@ -19,6 +19,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
 import itertools
 import warnings
+from io import StringIO  # 新增导入
 
 warnings.filterwarnings('ignore')
 
@@ -308,7 +309,7 @@ class VaccineDesignPipeline:
         print(f"🧬 设计多表位疫苗...", file=sys.stderr)
 
         if not selected_epitopes:
-            raise ValueError("没有选择的表位用于疫苗设计")
+            raise ValueError("没有选择的表位于疫苗设计")
 
         linker = self.linkers.get(linker_type, self.linkers['flexible'])
 
@@ -380,12 +381,33 @@ def main():
         sys.exit(1)
 
     try:
-        with open(input_path, 'r') as f:
-            records = list(SeqIO.parse(f, 'fasta'))
-        if not records:
-            print("错误：FASTA文件中没有序列", file=sys.stderr)
+        # 读取文件，过滤空行
+        with open(input_path, 'r', encoding='utf-8') as f:
+            lines = [line.strip() for line in f if line.strip()]
+        if not lines:
+            print("错误：文件为空", file=sys.stderr)
             sys.exit(1)
-        protein_sequence = str(records[0].seq)
+        if not lines[0].startswith('>'):
+            print("错误：文件不是有效的FASTA格式（第一行不是以>开头）", file=sys.stderr)
+            sys.exit(1)
+        # 重建干净的FASTA字符串
+        clean_fasta = '\n'.join(lines)
+        records = list(SeqIO.parse(StringIO(clean_fasta), 'fasta'))
+        if not records:
+            print("错误：无法解析FASTA序列", file=sys.stderr)
+            sys.exit(1)
+        # 获取序列字符串并移除所有空白字符
+        raw_seq = str(records[0].seq)
+        protein_sequence = ''.join(raw_seq.split())
+        # 可选：过滤非标准氨基酸
+        valid_aa = set('ACDEFGHIKLMNPQRSTVWY')
+        filtered_seq = ''.join([aa for aa in protein_sequence if aa in valid_aa])
+        if len(filtered_seq) == 0:
+            print("错误：序列不包含有效氨基酸", file=sys.stderr)
+            sys.exit(1)
+        if filtered_seq != protein_sequence:
+            print(f"警告：移除了 {len(protein_sequence)-len(filtered_seq)} 个无效字符", file=sys.stderr)
+        protein_sequence = filtered_seq
         print(f"从FASTA文件读取序列: {records[0].id}, 长度 {len(protein_sequence)}", file=sys.stderr)
     except Exception as e:
         print(f"读取FASTA文件失败: {e}", file=sys.stderr)
