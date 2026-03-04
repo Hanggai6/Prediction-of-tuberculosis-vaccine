@@ -1,6 +1,6 @@
 streamlit
 pandas
-torch
-biopython
-scikit-learn
 numpy
+scikit-learn
+biopython
+torch
