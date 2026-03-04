@@ -1,25 +1,10 @@
-import sys
-import subprocess
 import streamlit as st
 import pandas as pd
+import subprocess
+import sys
 import os
 import uuid
-import json  # 新增导入
-
-# ------------------ 调试信息（部署后可删除） ------------------
-st.write(f"**当前 Python 解释器路径**: `{sys.executable}`")
-st.write(f"**Python 版本**: `{sys.version}`")
-
-try:
-    import torch
-    st.success(f"✅ torch 导入成功！版本: {torch.__version__}")
-except ImportError as e:
-    st.error(f"❌ torch 导入失败: {e}")
-
-# 列出已安装的包（可选，可注释掉以节省空间）
-# result = subprocess.run([sys.executable, "-m", "pip", "list"], capture_output=True, text=True)
-# st.text("已安装的包:\n" + result.stdout)
-# ------------------------------------------------------------
+import json
 
 # 设置页面配置
 st.set_page_config(
@@ -88,8 +73,25 @@ with st.container():
 
 st.markdown("---")
 
+def is_valid_fasta(content):
+    """简单检查是否为有效FASTA格式（至少有一个以>开头的行，且后续有非空序列）"""
+    lines = content.strip().split('\n')
+    if not lines:
+        return False
+    # 第一行必须以 > 开头
+    if not lines[0].startswith('>'):
+        return False
+    # 至少有一行序列（非空且不是以>开头）
+    has_sequence = False
+    for line in lines[1:]:
+        if line.strip() and not line.startswith('>'):
+            has_sequence = True
+            break
+    return has_sequence
+
 # 预测逻辑
 if submit_button:
+    # 检查是否有输入
     if not fasta_text.strip() and uploaded_file is None:
         st.warning("请先粘贴FASTA序列或上传文件。")
         st.stop()
@@ -101,16 +103,39 @@ if submit_button:
     os.makedirs(temp_dir, exist_ok=True)
 
     if uploaded_file is not None:
-        input_path = os.path.join(temp_dir, f"input_{unique_id}.fasta")
-        with open(input_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        st.info(f"已使用上传的文件: {uploaded_file.name}")
+        # 读取上传文件内容
+        try:
+            file_content = uploaded_file.read().decode('utf-8')
+            if not file_content.strip():
+                st.error("上传的文件为空。请检查文件内容。")
+                st.stop()
+            # 验证FASTA格式
+            if not is_valid_fasta(file_content):
+                st.error("文件内容不是有效的FASTA格式。第一行必须以 '>' 开头，且包含序列。")
+                st.stop()
+            # 保存文件
+            input_path = os.path.join(temp_dir, f"input_{unique_id}.fasta")
+            with open(input_path, "w", encoding='utf-8') as f:
+                f.write(file_content)
+            st.info(f"已使用上传的文件: {uploaded_file.name}")
+        except Exception as e:
+            st.error(f"读取文件失败: {e}")
+            st.stop()
     else:
+        # 处理文本输入
         text_content = fasta_text.strip()
+        if not text_content:
+            st.warning("请输入FASTA序列。")
+            st.stop()
+        # 验证FASTA格式
+        if not is_valid_fasta(text_content):
+            st.error("输入的文本不是有效的FASTA格式。第一行必须以 '>' 开头，且包含序列。")
+            st.stop()
+        # 如果用户只提供了序列没有头，自动添加一个头
         if not text_content.startswith('>'):
             text_content = ">user_provided_sequence\n" + text_content
         input_path = os.path.join(temp_dir, f"input_{unique_id}.fasta")
-        with open(input_path, "w") as f:
+        with open(input_path, "w", encoding='utf-8') as f:
             f.write(text_content)
         st.info("已使用粘贴的文本序列。")
 
@@ -119,7 +144,7 @@ if submit_button:
 
     with st.spinner("🔬 AI模型正在预测中，请稍候..."):
         try:
-            # 关键修改：使用 sys.executable 确保子进程使用同一 Python 解释器
+            # 调用后端脚本
             result = subprocess.run(
                 [sys.executable, '8vaccine_design_pipeline.py', '--input', input_path, '--output', output_path],
                 capture_output=True,
@@ -143,7 +168,7 @@ if submit_button:
                         mime="text/csv"
                     )
 
-                # 统计信息（增加B细胞/T细胞计数）
+                # 统计信息
                 st.subheader("📈 统计信息")
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
