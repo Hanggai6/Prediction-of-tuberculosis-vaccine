@@ -19,7 +19,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
 import itertools
 import warnings
-from io import StringIO  # 新增导入
+from io import StringIO
 
 warnings.filterwarnings('ignore')
 
@@ -30,7 +30,7 @@ from multimodal_model_architecture import MultiModalEpitopePredictor, EpitopeDat
 class VaccineDesignPipeline:
     """疫苗设计管道"""
 
-    def __init__(self, model_path="best_multimodal_epitope_model.pth"):  # 直接当前目录
+    def __init__(self, model_path="best_multimodal_epitope_model.pth"):
         self.model_path = Path(model_path)
         self.model = None
         self.data_loader = None
@@ -352,10 +352,36 @@ class VaccineDesignPipeline:
         vaccine_design = self.design_multitope_vaccine(selected)
 
         if output_csv:
-            # 保存表位详情为CSV
+            # 创建表位DataFrame
             epitope_df = pd.DataFrame(vaccine_design['epitope_details'])
-            epitope_df.to_csv(output_csv, index=False, encoding='utf-8')
-            print(f"💾 表位详情已保存至: {output_csv}", file=sys.stderr)
+            
+            # 创建疫苗信息行
+            vaccine_row = pd.DataFrame([{
+                'sequence': vaccine_design['vaccine_sequence'],
+                'start_pos': None,
+                'end_pos': None,
+                'length': vaccine_design['total_length'],
+                'source_protein': 'vaccine',
+                'immunogenicity_score': vaccine_design['average_immunogenicity'],
+                'tcell_probability': None,
+                'bcell_probability': None,
+                'predicted_immunogenic': None,
+                'predicted_type': 'vaccine',
+                'molecular_weight': vaccine_design['molecular_weight'],
+                'isoelectric_point': vaccine_design['isoelectric_point'],
+                'num_epitopes': vaccine_design['num_epitopes'],
+                'linker_type': vaccine_design['linker_type'],
+                'bcell_epitopes': vaccine_design['epitope_composition']['bcell_epitopes'],
+                'tcell_epitopes': vaccine_design['epitope_composition']['tcell_epitopes'],
+                'type': 'vaccine'
+            }])
+            
+            # 合并：疫苗行在前，表位行在后
+            final_df = pd.concat([vaccine_row, epitope_df], ignore_index=True)
+            
+            # 保存CSV
+            final_df.to_csv(output_csv, index=False, encoding='utf-8')
+            print(f"💾 表位详情（含疫苗序列）已保存至: {output_csv}", file=sys.stderr)
 
             # 保存疫苗设计摘要为JSON（不包含epitope_details）
             output_path = Path(output_csv)
