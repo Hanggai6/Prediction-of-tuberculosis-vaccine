@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import os
 import uuid
+import json  # 新增导入
 
 # ------------------ 调试信息（部署后可删除） ------------------
 st.write(f"**当前 Python 解释器路径**: `{sys.executable}`")
@@ -114,6 +115,7 @@ if submit_button:
         st.info("已使用粘贴的文本序列。")
 
     output_path = os.path.join(temp_dir, f"output_{unique_id}.csv")
+    summary_path = output_path.replace('.csv', '_vaccine_summary.json')
 
     with st.spinner("🔬 AI模型正在预测中，请稍候..."):
         try:
@@ -132,6 +134,7 @@ if submit_button:
                 st.subheader("📊 预测结果")
                 st.dataframe(df, use_container_width=True)
 
+                # 下载按钮
                 with open(output_path, "rb") as f:
                     st.download_button(
                         label="📥 下载结果 (CSV)",
@@ -140,9 +143,9 @@ if submit_button:
                         mime="text/csv"
                     )
 
-                # 统计信息
+                # 统计信息（增加B细胞/T细胞计数）
                 st.subheader("📈 统计信息")
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("总表位数", len(df))
                 with col2:
@@ -150,6 +153,10 @@ if submit_button:
                         avg_score = df['immunogenicity_score'].mean()
                         st.metric("平均免疫原性得分", f"{avg_score:.3f}")
                 with col3:
+                    if 'predicted_type' in df.columns:
+                        tcell_count = (df['predicted_type'] == 'T-cell').sum()
+                        st.metric("T细胞表位数", tcell_count)
+                with col4:
                     if 'predicted_type' in df.columns:
                         bcell_count = (df['predicted_type'] == 'B-cell').sum()
                         st.metric("B细胞表位数", bcell_count)
@@ -159,6 +166,26 @@ if submit_button:
                     st.subheader("🔝 高免疫原性表位 (前5)")
                     top5 = df.nlargest(5, 'immunogenicity_score')[['sequence', 'immunogenicity_score', 'predicted_type']]
                     st.table(top5)
+
+                # 读取并展示疫苗设计摘要
+                if os.path.exists(summary_path):
+                    with open(summary_path, 'r', encoding='utf-8') as f:
+                        vaccine_summary = json.load(f)
+
+                    st.subheader("🧬 设计的疫苗序列")
+                    st.code(vaccine_summary['vaccine_sequence'], language='text')
+
+                    # 疫苗详细信息
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("疫苗长度 (aa)", vaccine_summary['total_length'])
+                        st.metric("连接子类型", vaccine_summary['linker_type'])
+                    with col2:
+                        st.metric("分子量 (Da)", f"{vaccine_summary['molecular_weight']:.1f}")
+                        st.metric("等电点", f"{vaccine_summary['isoelectric_point']:.2f}")
+                    with col3:
+                        st.metric("平均免疫原性", f"{vaccine_summary['average_immunogenicity']:.3f}")
+                        st.metric("表位总数", vaccine_summary['num_epitopes'])
 
             else:
                 st.error("预测完成，但未生成结果文件。请检查后台脚本。")
