@@ -351,10 +351,18 @@ class VaccineDesignPipeline:
         vaccine_design = self.design_multitope_vaccine(selected)
 
         if output_csv:
-            # 将表位详情保存为CSV
+            # 保存表位详情为CSV
             epitope_df = pd.DataFrame(vaccine_design['epitope_details'])
             epitope_df.to_csv(output_csv, index=False, encoding='utf-8')
-            print(f"💾 结果已保存至: {output_csv}", file=sys.stderr)
+            print(f"💾 表位详情已保存至: {output_csv}", file=sys.stderr)
+
+            # 保存疫苗设计摘要为JSON（不包含epitope_details）
+            output_path = Path(output_csv)
+            summary_path = output_path.parent / (output_path.stem + "_vaccine_summary.json")
+            summary = {k: v for k, v in vaccine_design.items() if k != 'epitope_details'}
+            with open(summary_path, 'w', encoding='utf-8') as f:
+                json.dump(summary, f, ensure_ascii=False, indent=2, default=str)
+            print(f"💾 疫苗设计摘要已保存至: {summary_path}", file=sys.stderr)
 
         return vaccine_design
 
