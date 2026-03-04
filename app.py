@@ -1,18 +1,33 @@
+import sys
+import subprocess
 import streamlit as st
 import pandas as pd
-import subprocess
 import os
 import uuid
-import tempfile
 
-# 设置页面配置（标题、图标、布局）
+# ------------------ 调试信息（部署后可删除） ------------------
+st.write(f"**当前 Python 解释器路径**: `{sys.executable}`")
+st.write(f"**Python 版本**: `{sys.version}`")
+
+try:
+    import torch
+    st.success(f"✅ torch 导入成功！版本: {torch.__version__}")
+except ImportError as e:
+    st.error(f"❌ torch 导入失败: {e}")
+
+# 列出已安装的包（可选，可注释掉以节省空间）
+# result = subprocess.run([sys.executable, "-m", "pip", "list"], capture_output=True, text=True)
+# st.text("已安装的包:\n" + result.stdout)
+# ------------------------------------------------------------
+
+# 设置页面配置
 st.set_page_config(
     page_title="结核杆菌表位预测",
     page_icon="🧬",
-    layout="centered"  # 内容居中
+    layout="centered"
 )
 
-# 自定义CSS，让内容区域更美观
+# 自定义 CSS
 st.markdown("""
 <style>
     .main-title {
@@ -42,31 +57,18 @@ st.markdown("""
     .stButton button:hover {
         background-color: #2980b9;
     }
-    .metric-card {
-        background-color: #f8f9fa;
-        border-radius: 10px;
-        padding: 15px;
-        text-align: center;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
 </style>
 """, unsafe_allow_html=True)
 
-# 页面标题和介绍
+# 页面标题
 st.markdown('<h1 class="main-title">🧬 结核杆菌表位预测工具</h1>', unsafe_allow_html=True)
 st.markdown('<p class="subtitle">输入蛋白质序列（FASTA格式），AI将为你预测潜在的结核杆菌表位，辅助疫苗设计。</p>', unsafe_allow_html=True)
 
-# --- 创建两个列，用于放置主要内容的容器（实际上由于layout=centered，已经是居中） ---
-# 直接开始输入区域
-st.markdown("---")  # 分割线
+st.markdown("---")
 
-# 使用容器包裹输入部分，便于管理
-input_container = st.container()
-
-with input_container:
+# 输入区域
+with st.container():
     st.subheader("📥 输入序列")
-
-    # 文本输入区域（默认显示）
     fasta_text = st.text_area(
         "粘贴FASTA序列",
         height=200,
@@ -74,7 +76,6 @@ with input_container:
         key="fasta_text"
     )
 
-    # 文件上传选项
     st.markdown("**或者上传FASTA文件**")
     uploaded_file = st.file_uploader(
         "选择文件 (支持 .fasta, .txt, .fa)",
@@ -82,33 +83,28 @@ with input_container:
         key="uploaded_file"
     )
 
-    # 提交按钮
     submit_button = st.button("🚀 开始预测", type="primary")
 
-st.markdown("---")  # 分割线
+st.markdown("---")
 
-# --- 处理预测逻辑 ---
+# 预测逻辑
 if submit_button:
-    # 检查是否有输入
     if not fasta_text.strip() and uploaded_file is None:
         st.warning("请先粘贴FASTA序列或上传文件。")
-        st.stop()  # 停止后续执行
+        st.stop()
 
-    # 确定输入来源：优先使用文件上传，否则使用文本输入
+    # 准备输入文件
     input_path = None
     unique_id = str(uuid.uuid4())
     temp_dir = "temp"
     os.makedirs(temp_dir, exist_ok=True)
 
     if uploaded_file is not None:
-        # 使用上传的文件
         input_path = os.path.join(temp_dir, f"input_{unique_id}.fasta")
         with open(input_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
         st.info(f"已使用上传的文件: {uploaded_file.name}")
     else:
-        # 使用文本输入
-        # 如果用户没有提供FASTA头，自动添加一个
         text_content = fasta_text.strip()
         if not text_content.startswith('>'):
             text_content = ">user_provided_sequence\n" + text_content
@@ -117,31 +113,25 @@ if submit_button:
             f.write(text_content)
         st.info("已使用粘贴的文本序列。")
 
-    # 定义输出文件路径
     output_path = os.path.join(temp_dir, f"output_{unique_id}.csv")
 
-    # 显示加载动画
     with st.spinner("🔬 AI模型正在预测中，请稍候..."):
         try:
-            # 调用后端脚本
+            # 关键修改：使用 sys.executable 确保子进程使用同一 Python 解释器
             result = subprocess.run(
-                ['python', '8vaccine_design_pipeline.py', '--input', input_path, '--output', output_path],
+                [sys.executable, '8vaccine_design_pipeline.py', '--input', input_path, '--output', output_path],
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=300  # 5分钟超时
+                timeout=300
             )
 
-            # 检查输出文件是否存在
             if os.path.exists(output_path):
-                # 读取结果
                 df = pd.read_csv(output_path)
 
-                # 显示结果
                 st.subheader("📊 预测结果")
                 st.dataframe(df, use_container_width=True)
 
-                # 下载按钮
                 with open(output_path, "rb") as f:
                     st.download_button(
                         label="📥 下载结果 (CSV)",
@@ -150,7 +140,7 @@ if submit_button:
                         mime="text/csv"
                     )
 
-                # 统计信息卡片
+                # 统计信息
                 st.subheader("📈 统计信息")
                 col1, col2, col3 = st.columns(3)
                 with col1:
@@ -164,9 +154,9 @@ if submit_button:
                         bcell_count = (df['predicted_type'] == 'B-cell').sum()
                         st.metric("B细胞表位数", bcell_count)
 
-                # 可选：展示前几个表位
-                st.subheader("🔝 高免疫原性表位 (前5)")
+                # 展示前5个高免疫原性表位
                 if 'immunogenicity_score' in df.columns:
+                    st.subheader("🔝 高免疫原性表位 (前5)")
                     top5 = df.nlargest(5, 'immunogenicity_score')[['sequence', 'immunogenicity_score', 'predicted_type']]
                     st.table(top5)
 
@@ -185,7 +175,6 @@ if submit_button:
         except Exception as e:
             st.error(f"发生未知错误：{e}")
 
-# 页脚（可选）
 st.markdown("---")
 st.markdown(
     "<p style='text-align: center; color: gray;'>基于深度学习的结核杆菌表位预测工具 | 仅供研究使用</p>",
